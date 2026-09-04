@@ -31,31 +31,57 @@ func (r *Renderer) Weekend(weekend *schedule.Weekend, now time.Time, circuitTZ *
 }
 
 func (r *Renderer) printHeader(weekend *schedule.Weekend, now time.Time) {
-	const width = 52
-
-	var badge string
-	if weekend.Ongoing {
-		badge = r.term.Badge(term.BgGreen+term.Bold, " ONGOING ")
-	} else {
-		badge = r.term.Badge(term.BgBlue+term.Bold, " UPCOMING ")
-	}
-
 	title := r.term.Bold(weekend.MeetingName)
 	location := r.term.Dim(fmt.Sprintf("%s · %s", weekend.Circuit, weekend.Country))
+	staleCache := weekend.Cached && !weekend.CacheSavedDuringWeekend(time.Local)
 
-	var nextLine string
-	if next := weekend.NextUpcomingSession(); next != nil {
-		countdown := schedule.FormatCountdown(next.Start.Sub(now))
-		nextLine = r.term.Cyan("▸ ") + r.term.Bold("Next: ") +
-			shortLabel(next.Label) + r.term.Dim(" · in ") + r.term.Yellow(countdown)
-	} else if ongoing := weekend.CurrentOngoingSession(); ongoing != nil {
-		nextLine = r.term.Yellow("▸ ") + r.term.Bold("Live now: ") + r.term.Yellow(shortLabel(ongoing.Label))
+	var badges []string
+	switch {
+	case weekend.Finished():
+		badges = append(badges, r.term.Badge(term.BgMagenta+term.Bold, " PAST "))
+	case weekend.Ongoing:
+		badges = append(badges, r.term.Badge(term.BgGreen+term.Bold, " ONGOING "))
+	default:
+		badges = append(badges, r.term.Badge(term.BgBlue+term.Bold, " UPCOMING "))
+	}
+	if staleCache && !weekend.Finished() {
+		badges = append(badges, r.term.Badge(term.BgYellow+term.Bold, " STALE CACHE "))
 	}
 
-	top := badge + " " + title
+	top := strings.Join(badges, " ") + " " + title
 	inner := []string{top, location}
-	if nextLine != "" {
-		inner = append(inner, nextLine)
+
+	if weekend.Finished() {
+		inner = append(inner, r.term.Magenta("this race weekend has already finished"))
+	} else {
+		if ongoing := weekend.CurrentOngoingSession(); ongoing != nil {
+			inner = append(inner, r.term.Yellow("▸ ")+r.term.Bold("Live now: ")+r.term.Yellow(shortLabel(ongoing.Label)))
+		}
+		if next := weekend.NextUpcomingSession(); next != nil {
+			countdown := schedule.FormatCountdown(next.Start.Sub(now))
+			inner = append(inner, r.term.Cyan("▸ ")+r.term.Bold("Next: ")+
+				shortLabel(next.Label)+r.term.Dim(" · in ")+r.term.Yellow(countdown))
+		}
+	}
+
+	if weekend.Cached {
+		saved := weekend.CacheSavedAt.In(time.Local).Format("Mon 2 Jan, 15:04")
+		switch {
+		case weekend.Finished():
+			inner = append(inner, r.term.Yellow("cached from a previous GP")+r.term.Dim(" · saved ")+r.term.Yellow(saved))
+		case staleCache:
+			inner = append(inner, r.term.Yellow("cache is not from this race weekend"))
+			inner = append(inner, r.term.Dim("saved ")+r.term.Yellow(saved)+r.term.Dim(" — timetable may be outdated"))
+		default:
+			inner = append(inner, r.term.Yellow("cached")+r.term.Dim(" · saved ")+r.term.Dim(saved))
+		}
+	}
+
+	width := 52
+	for _, line := range inner {
+		if w := utf8.RuneCountInString(stripANSI(line)) + 4; w > width {
+			width = w
+		}
 	}
 
 	r.printBox(width, inner)

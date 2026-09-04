@@ -2,12 +2,19 @@ package schedule
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"f1sched/internal/cache"
 	"f1sched/internal/openf1"
 )
+
+type Fetcher interface {
+	Meetings(year int) ([]openf1.Meeting, error)
+	Sessions(year int) ([]openf1.Session, error)
+}
 
 type SessionStatus string
 
@@ -25,41 +32,86 @@ type SessionEvent struct {
 }
 
 type Weekend struct {
-	MeetingName string
-	Location    string
-	Country     string
-	Circuit     string
-	GmtOffset   string
-	Sessions    []SessionEvent
-	Ongoing     bool
+	MeetingName  string
+	Location     string
+	Country      string
+	Circuit      string
+	GmtOffset    string
+	Sessions     []SessionEvent
+	Ongoing      bool
+	Cached       bool
+	CacheSavedAt time.Time
 }
 
-func ActiveWeekend(client *openf1.Client, now time.Time) (*Weekend, error) {
+func ActiveWeekend(client Fetcher, cachePath string, now time.Time) (*Weekend, error) {
 	years := []int{now.Year()}
 	if now.Month() >= time.November {
 		years = append(years, now.Year()+1)
 	}
 
-	meetings := make(map[int]openf1.Meeting)
-	var allSessions []openf1.Session
+	meetingsByYear, sessionsByYear, err := fetchAll(client, years)
+	if err != nil {
+		if !openf1.IsLiveRestriction(err) {
+			return nil, err
+		}
+		if cachePath == "" {
+			return nil, fmt.Errorf("API locked during live session and no cache path configured: %w", err)
+		}
+		snap, loadErr := cache.Load(cachePath)
+		if loadErr != nil {
+			return nil, fmt.Errorf("API locked during live session and no cached schedule: %v", loadErr)
+		}
+		weekend, buildErr := weekendFromData(flatten(snap.MeetingsByYear()), flatten(snap.SessionsByYear()), now, true)
+		if buildErr != nil {
+			return nil, buildErr
+		}
+		weekend.Cached = true
+		weekend.CacheSavedAt = snap.SavedAt
+		return weekend, nil
+	}
 
+	if cachePath != "" {
+		if saveErr := cache.Save(cachePath, meetingsByYear, sessionsByYear); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not save schedule cache: %v\n", saveErr)
+		}
+	}
+
+	return weekendFromData(flatten(meetingsByYear), flatten(sessionsByYear), now, false)
+}
+
+func fetchAll(client Fetcher, years []int) (map[int][]openf1.Meeting, map[int][]openf1.Session, error) {
+	meetingsByYear := make(map[int][]openf1.Meeting, len(years))
+	sessionsByYear := make(map[int][]openf1.Session, len(years))
 	for _, year := range years {
-		yearMeetings, err := client.Meetings(year)
+		meetings, err := client.Meetings(year)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		for _, meeting := range yearMeetings {
-			if meeting.IsCancelled || !isRaceWeekend(meeting.MeetingName) {
-				continue
-			}
-			meetings[meeting.MeetingKey] = meeting
+		sessions, err := client.Sessions(year)
+		if err != nil {
+			return nil, nil, err
 		}
+		meetingsByYear[year] = meetings
+		sessionsByYear[year] = sessions
+	}
+	return meetingsByYear, sessionsByYear, nil
+}
 
-		yearSessions, err := client.Sessions(year)
-		if err != nil {
-			return nil, err
+func flatten[T any](byYear map[int][]T) []T {
+	var out []T
+	for _, list := range byYear {
+		out = append(out, list...)
+	}
+	return out
+}
+
+func weekendFromData(allMeetings []openf1.Meeting, allSessions []openf1.Session, now time.Time, allowPast bool) (*Weekend, error) {
+	meetings := make(map[int]openf1.Meeting)
+	for _, meeting := range allMeetings {
+		if meeting.IsCancelled || !isRaceWeekend(meeting.MeetingName) {
+			continue
 		}
-		allSessions = append(allSessions, yearSessions...)
+		meetings[meeting.MeetingKey] = meeting
 	}
 
 	type weekendCandidate struct {
@@ -94,7 +146,7 @@ func ActiveWeekend(client *openf1.Client, now time.Time) (*Weekend, error) {
 		})
 	}
 
-	var ongoing, upcoming []weekendCandidate
+	var ongoing, upcoming, completed []weekendCandidate
 	for meetingKey, sessions := range byMeeting {
 		if len(sessions) == 0 {
 			continue
@@ -113,6 +165,8 @@ func ActiveWeekend(client *openf1.Client, now time.Time) (*Weekend, error) {
 			ongoing = append(ongoing, candidate)
 		case now.Before(first):
 			upcoming = append(upcoming, candidate)
+		default:
+			completed = append(completed, candidate)
 		}
 	}
 
@@ -130,6 +184,13 @@ func ActiveWeekend(client *openf1.Client, now time.Time) (*Weekend, error) {
 			return upcoming[i].sessions[0].start.Before(upcoming[j].sessions[0].start)
 		})
 		chosen = &upcoming[0]
+	} else if allowPast && len(completed) > 0 {
+		sort.Slice(completed, func(i, j int) bool {
+			iLast := completed[i].sessions[len(completed[i].sessions)-1].end
+			jLast := completed[j].sessions[len(completed[j].sessions)-1].end
+			return iLast.After(jLast)
+		})
+		chosen = &completed[0]
 	}
 
 	if chosen == nil {
@@ -203,6 +264,45 @@ func (w *Weekend) CurrentOngoingSession() *SessionEvent {
 		}
 	}
 	return nil
+}
+
+func (w *Weekend) Finished() bool {
+	if len(w.Sessions) == 0 {
+		return false
+	}
+	for _, session := range w.Sessions {
+		if session.Status != StatusCompleted {
+			return false
+		}
+	}
+	return true
+}
+
+func (w *Weekend) CacheSavedDuringWeekend(loc *time.Location) bool {
+	if !w.Cached || w.CacheSavedAt.IsZero() || len(w.Sessions) == 0 {
+		return true
+	}
+
+	first := w.Sessions[0].Start
+	last := w.Sessions[0].End
+	for _, session := range w.Sessions[1:] {
+		if session.Start.Before(first) {
+			first = session.Start
+		}
+		if session.End.After(last) {
+			last = session.End
+		}
+	}
+
+	start := dayStart(first, loc)
+	end := dayStart(last, loc).Add(24 * time.Hour)
+	saved := w.CacheSavedAt.In(loc)
+	return !saved.Before(start) && saved.Before(end)
+}
+
+func dayStart(t time.Time, loc *time.Location) time.Time {
+	t = t.In(loc)
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
 }
 
 func StatusLabel(status SessionStatus) string {
