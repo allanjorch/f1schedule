@@ -78,6 +78,9 @@ func TestWeekendShowsCachedAndLiveSession(t *testing.T) {
 	if strings.Contains(out, "STALE CACHE") {
 		t.Fatalf("did not expect a stale warning for a same-weekend cache:\n%s", out)
 	}
+	if !strings.Contains(out, "openf1.org") {
+		t.Fatalf("expected OpenF1 credit in:\n%s", out)
+	}
 }
 
 func TestWeekendShowsStaleCacheWarning(t *testing.T) {

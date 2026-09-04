@@ -28,6 +28,7 @@ func (r *Renderer) Weekend(weekend *schedule.Weekend, now time.Time, circuitTZ *
 
 	r.printHeader(weekend, now)
 	r.printTable(weekend, circuitTZ, sameZone, localZone, circuitZone)
+	r.printCredit()
 }
 
 func (r *Renderer) printHeader(weekend *schedule.Weekend, now time.Time) {
@@ -86,6 +87,11 @@ func (r *Renderer) printHeader(weekend *schedule.Weekend, now time.Time) {
 
 	r.printBox(width, inner)
 	fmt.Fprintln(r.out)
+}
+
+func (r *Renderer) printCredit() {
+	fmt.Fprintln(r.out)
+	fmt.Fprintln(r.out, r.term.Dim("  Data from OpenF1 · openf1.org"))
 }
 
 func (r *Renderer) printTable(

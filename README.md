@@ -25,4 +25,10 @@ go build
 
 ## During a live session
 
-The schedule comes from [OpenF1](https://openf1.org/). While a session is running, unauthenticated access is locked. After a successful run, the season timetable is saved to `~/.cache/f1schedule/schedule.json`. The next time the API is locked, the app uses that cache, marks the output as cached, and warns if the file is from before this race weekend.
+While a session is running, OpenF1 locks unauthenticated access. After a successful run, the season timetable is saved to `~/.cache/f1schedule/schedule.json`. The next time the API is locked, the app uses that cache, marks the output as cached, and warns if the file is from before this race weekend.
+
+## Credits
+
+Session times come from [OpenF1](https://openf1.org/). They publish Formula 1 schedule and timing data as an open API — this CLI is only as useful as that work.
+
+Built with [Grok](https://x.ai), the workhorse on the implementation, alongside Allan.
