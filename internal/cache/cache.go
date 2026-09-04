@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"f1sched/internal/openf1"
+	"f1schedule/internal/openf1"
 )
 
 type Snapshot struct {
@@ -22,7 +22,7 @@ func Path() string {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	return filepath.Join(dir, "f1sched", "schedule.json")
+	return filepath.Join(dir, "f1schedule", "schedule.json")
 }
 
 func Save(path string, meetings map[int][]openf1.Meeting, sessions map[int][]openf1.Session) error {

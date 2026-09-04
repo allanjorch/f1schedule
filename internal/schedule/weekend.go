@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"f1sched/internal/cache"
-	"f1sched/internal/openf1"
+	"f1schedule/internal/cache"
+	"f1schedule/internal/openf1"
 )
 
 type Fetcher interface {

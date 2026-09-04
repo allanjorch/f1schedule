@@ -5,10 +5,10 @@ import (
 	"os"
 	"time"
 
-	"f1sched/internal/cache"
-	"f1sched/internal/display"
-	"f1sched/internal/openf1"
-	"f1sched/internal/schedule"
+	"f1schedule/internal/cache"
+	"f1schedule/internal/display"
+	"f1schedule/internal/openf1"
+	"f1schedule/internal/schedule"
 )
 
 func main() {

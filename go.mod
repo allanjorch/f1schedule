@@ -1,3 +1,3 @@
-module f1sched
+module f1schedule
 
 go 1.24

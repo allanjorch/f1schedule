@@ -7,8 +7,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"f1sched/internal/schedule"
-	"f1sched/internal/term"
+	"f1schedule/internal/schedule"
+	"f1schedule/internal/term"
 )
 
 type Renderer struct {
@@ -65,7 +65,7 @@ func (r *Renderer) printHeader(weekend *schedule.Weekend, now time.Time) {
 	}
 
 	if weekend.Cached {
-		saved := weekend.CacheSavedAt.In(time.Local).Format("Mon 2 Jan, 15:04")
+		saved := schedule.FormatCacheTime(weekend.CacheSavedAt.In(time.Local))
 		switch {
 		case weekend.Finished():
 			inner = append(inner, r.term.Yellow("cached from a previous GP")+r.term.Dim(" · saved ")+r.term.Yellow(saved))
@@ -245,7 +245,7 @@ func shortLabel(label string) string {
 }
 
 func formatCompact(t time.Time) string {
-	return t.Format("Mon 02 Jan  15:04")
+	return schedule.FormatCompact(t)
 }
 
 func stripANSI(s string) string {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"f1sched/internal/schedule"
+	"f1schedule/internal/schedule"
 )
 
 func TestShortLabel(t *testing.T) {

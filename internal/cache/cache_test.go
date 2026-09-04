@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"f1sched/internal/openf1"
+	"f1schedule/internal/openf1"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {

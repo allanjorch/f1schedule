@@ -78,7 +78,3 @@ func FormatCountdown(until time.Duration) string {
 	}
 	return strings.Join(parts, ", ")
 }
-
-func FormatDateTime(t time.Time) string {
-	return t.Format("Mon 2 Jan 2006, 15:04 MST")
-}
