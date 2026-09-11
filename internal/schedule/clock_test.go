@@ -5,40 +5,53 @@ import (
 	"time"
 )
 
-func TestTFmtUses12Hour(t *testing.T) {
+func TestZoneUses12Hour(t *testing.T) {
 	tests := []struct {
-		in     string
+		zone   string
 		twelve bool
 		known  bool
 	}{
-		{"%r", true, true},
-		{"%I:%M:%S %p", true, true},
-		{`t_fmt="%I:%M:%S %p"`, true, true},
-		{"%H:%M:%S", false, true},
-		{"%R", false, true},
-		{"%T", false, true},
-		{"", false, false},
+		{"Europe/Copenhagen", false, true},
+		{"America/New_York", true, true},
+		{"Australia/Sydney", true, true},
+		{"Europe/London", false, true},
+		{"Europe/Dublin", true, true},
+		{"America/Sao_Paulo", false, true},
+		{"America/Mexico_City", true, true},
+		{"America/Toronto", true, true},
+		{"Asia/Kolkata", true, true},
+		{"Pacific/Auckland", true, true},
+		{"UTC", false, true},
+		{"Etc/UTC", false, true},
+		{"Local", false, false},
 	}
 	for _, tc := range tests {
-		twelve, ok := tFmtUses12Hour(tc.in)
+		twelve, ok := zoneUses12Hour(tc.zone)
 		if ok != tc.known || twelve != tc.twelve {
-			t.Fatalf("%q: got twelve=%v ok=%v, want twelve=%v ok=%v", tc.in, twelve, ok, tc.twelve, tc.known)
+			t.Fatalf("%q: got twelve=%v ok=%v, want twelve=%v ok=%v", tc.zone, twelve, ok, tc.twelve, tc.known)
 		}
 	}
 }
 
-func TestLangUses12Hour(t *testing.T) {
-	if !langUses12Hour("en_US.UTF-8") {
-		t.Fatal("expected en_US to use 12-hour time")
+func TestLocalIANAZoneUsesTZ(t *testing.T) {
+	t.Setenv("TZ", "America/New_York")
+	if got := localIANAZone(); got != "America/New_York" {
+		t.Fatalf("TZ: got %q", got)
 	}
-	if langUses12Hour("en_GB.UTF-8") {
-		t.Fatal("expected en_GB to use 24-hour time")
+	t.Setenv("TZ", ":Europe/Copenhagen")
+	if got := localIANAZone(); got != "Europe/Copenhagen" {
+		t.Fatalf("colon TZ: got %q", got)
 	}
-	if langUses12Hour("da_DK.UTF-8") {
-		t.Fatal("expected da_DK to use 24-hour time")
+}
+
+func TestDetect12HourClockFollowsTimezone(t *testing.T) {
+	t.Setenv("TZ", "Europe/Copenhagen")
+	if detect12HourClock() {
+		t.Fatal("Europe/Copenhagen should use 24-hour time")
 	}
-	if langUses12Hour("C") {
-		t.Fatal("expected C locale to use 24-hour time")
+	t.Setenv("TZ", "America/New_York")
+	if !detect12HourClock() {
+		t.Fatal("America/New_York should use 12-hour time")
 	}
 }
 

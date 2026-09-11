@@ -1,8 +1,9 @@
 package schedule
 
 import (
+	"bufio"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -44,65 +45,103 @@ func FormatDateTime(t time.Time) string {
 }
 
 func detect12HourClock() bool {
-	if out, err := exec.Command("locale", "t_fmt").Output(); err == nil {
-		if twelve, ok := tFmtUses12Hour(string(out)); ok {
-			return twelve
-		}
-	}
-	for _, key := range []string{"LC_TIME", "LC_ALL", "LANG"} {
-		if v := os.Getenv(key); v != "" {
-			return langUses12Hour(v)
-		}
+	if twelve, ok := zoneUses12Hour(localIANAZone()); ok {
+		return twelve
 	}
 	return false
 }
 
-func tFmtUses12Hour(s string) (twelve bool, ok bool) {
-	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "t_fmt=")
-	s = strings.Trim(s, `"`)
-	if s == "" {
-		return false, false
+func localIANAZone() string {
+	if tz := strings.TrimSpace(os.Getenv("TZ")); tz != "" {
+		tz = strings.TrimPrefix(tz, ":")
+		if tz != "" && tz != "localtime" {
+			return tz
+		}
 	}
-	if strings.Contains(s, "%I") || strings.Contains(s, "%l") || strings.Contains(s, "%p") || strings.Contains(s, "%P") || strings.Contains(s, "%r") {
-		return true, true
+	target, err := filepath.EvalSymlinks("/etc/localtime")
+	if err != nil {
+		return time.Local.String()
 	}
-	if strings.Contains(s, "%H") || strings.Contains(s, "%R") || strings.Contains(s, "%T") || strings.Contains(s, "%k") {
-		return false, true
+	const marker = "/zoneinfo/"
+	slash := filepath.ToSlash(target)
+	if i := strings.LastIndex(slash, marker); i >= 0 {
+		return slash[i+len(marker):]
 	}
-	return false, false
+	return time.Local.String()
 }
 
-func langUses12Hour(lang string) bool {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	if lang == "" || lang == "c" || lang == "posix" {
-		return false
+func zoneUses12Hour(zone string) (twelve bool, ok bool) {
+	zone = strings.TrimPrefix(strings.TrimSpace(zone), ":")
+	if zone == "" || strings.EqualFold(zone, "Local") {
+		return false, false
 	}
-	if i := strings.IndexAny(lang, ".@"); i >= 0 {
-		lang = lang[:i]
+	if isUTCZone(zone) {
+		return false, true
 	}
-	switch {
-	case strings.HasSuffix(lang, "_us"),
-		strings.HasSuffix(lang, "_ph"),
-		strings.HasSuffix(lang, "_mx"),
-		strings.HasSuffix(lang, "_co"),
-		strings.HasSuffix(lang, "_hn"),
-		strings.HasSuffix(lang, "_gt"),
-		strings.HasSuffix(lang, "_sv"),
-		strings.HasSuffix(lang, "_ni"),
-		strings.HasSuffix(lang, "_pa"),
-		strings.HasSuffix(lang, "_pr"),
-		strings.HasSuffix(lang, "_in"),
-		strings.HasSuffix(lang, "_pk"),
-		strings.HasSuffix(lang, "_eg"),
-		strings.HasSuffix(lang, "_sa"),
-		strings.HasSuffix(lang, "_au"),
-		strings.HasSuffix(lang, "_nz"),
-		strings.HasSuffix(lang, "_ie"):
-		return true
-	case strings.HasPrefix(lang, "en_") && strings.HasSuffix(lang, "_ca"):
+	countries, found := countriesForZone(zone)
+	if !found || len(countries) == 0 {
+		return false, false
+	}
+	return countryUses12Hour(countries[0]), true
+}
+
+func isUTCZone(zone string) bool {
+	z := strings.ToUpper(zone)
+	return z == "UTC" || z == "GMT" || z == "UCT" || strings.HasPrefix(z, "ETC/")
+}
+
+func countryUses12Hour(cc string) bool {
+	switch strings.ToUpper(cc) {
+	case "US", "PH", "MX", "CO", "HN", "GT", "SV", "NI", "PA", "PR",
+		"IN", "PK", "EG", "SA", "AU", "NZ", "IE", "CA":
 		return true
 	default:
 		return false
+	}
+}
+
+var (
+	zoneCountriesOnce sync.Once
+	zoneCountries     map[string][]string
+)
+
+func countriesForZone(zone string) ([]string, bool) {
+	zoneCountriesOnce.Do(loadZoneCountries)
+	c, ok := zoneCountries[zone]
+	return c, ok
+}
+
+func loadZoneCountries() {
+	zoneCountries = map[string][]string{}
+	for _, path := range []string{
+		"/usr/share/zoneinfo/zone.tab",
+		"/usr/share/zoneinfo/zone1970.tab",
+	} {
+		loadZoneTab(path)
+	}
+}
+
+func loadZoneTab(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Split(line, "	")
+		if len(fields) < 3 {
+			continue
+		}
+		name := fields[2]
+		if _, exists := zoneCountries[name]; exists {
+			continue
+		}
+		zoneCountries[name] = strings.Split(fields[0], ",")
 	}
 }

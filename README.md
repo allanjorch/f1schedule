@@ -14,7 +14,7 @@ That prints the active or upcoming Grand Prix. This is the Italian Grand Prix we
 
 ![Italian Grand Prix weekend in the terminal: ONGOING, next session FP3, timetable through Sunday's race](screenshot.png)
 
-Times follow your system timezone and clock (12-hour or 24-hour). If the circuit uses a different offset, a second column shows circuit local time.
+Times follow your system timezone, including 12-hour vs 24-hour. If the circuit uses a different offset, a second column shows circuit local time.
 
 To install a binary on your `PATH`:
 
